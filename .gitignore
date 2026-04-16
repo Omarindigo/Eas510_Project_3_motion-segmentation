@@ -1,0 +1,17 @@
+# Data (too large - download separately)
+data/
+
+# Results
+results/
+
+# Models (regenerate locally)
+*.pkl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
