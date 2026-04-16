@@ -38,7 +38,8 @@ from config import (
 from loader import DavisLoader
 from features import (
     extract_pixel_features, features_to_training_data, 
-    postprocess_mask, temporal_smooth
+    postprocess_mask, temporal_smooth, compute_temporal_median,
+    compute_optical_flow
 )
 from train import train_logistic_regression, train_knn, predict_segmentation
 from evaluate import compute_metrics, visualize_comparison
@@ -67,8 +68,10 @@ def train_model(loader, train_list):
         frames = frames[::FRAME_SKIP]
         masks = masks[::FRAME_SKIP]
         
+        bg_median = compute_temporal_median(frames, window=min(30, len(frames)))
+        
         for idx in range(len(frames) - 2):
-            features = extract_pixel_features(frames, idx)
+            features = extract_pixel_features(frames, idx, bg_median)
             mask = masks[idx]
             X, y = features_to_training_data(features, mask, sample_ratio=SAMPLE_RATIO)
             if len(X) > 0:
@@ -122,14 +125,22 @@ def evaluate_model(loader, scaler, model, test_list):
         frames = frames[::FRAME_SKIP]
         masks = masks[::FRAME_SKIP]
         
+        bg_median = compute_temporal_median(frames, window=min(30, len(frames)))
+        
         video_masks = []
         
         for idx in range(len(frames) - 2):
-            features = extract_pixel_features(frames, idx)
+            features = extract_pixel_features(frames, idx, bg_median)
             true_mask = (masks[idx] > 127).astype(np.uint8)
             
-            pred_mask = predict_segmentation(scaler, model, features, 
-                                          threshold=CLASSIFICATION_THRESHOLD)
+            bg_diff = features[:, :, 0]
+            flow_mag = features[:, :, 1] / 10
+            
+            # Combined: bg deviation AND flow must both indicate motion
+            bg_mask = (bg_diff > 15).astype(np.uint8)
+            flow_mask = (flow_mag > 1.5).astype(np.uint8)
+            
+            pred_mask = cv2.bitwise_and(bg_mask, flow_mask)
             
             if POSTPROCESS_ENABLED:
                 pred_mask = postprocess_mask(pred_mask, 

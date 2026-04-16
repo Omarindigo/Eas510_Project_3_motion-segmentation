@@ -28,26 +28,61 @@ def compute_local_mean_difference(diff: np.ndarray, kernel_size: int = 3) -> np.
     return smoothed.astype(np.uint8)
 
 
-def extract_pixel_features(frames: list, idx: int) -> np.ndarray:
+def compute_temporal_median(frames: list, window: int = 30) -> np.ndarray:
+    """Compute temporal median as background model."""
+    start = max(0, len(frames) - window)
+    end = len(frames)
+    recent = frames[start:end]
+    median = np.median(np.array(recent), axis=0).astype(np.uint8)
+    return median
+
+
+def compute_optical_flow(frames: list, idx: int) -> tuple:
+    """
+    Compute dense optical flow between frame idx and idx+1.
+    
+    Returns:
+        (flow_magnitude, flow_direction) - arrays of shape (H, W)
+    """
+    if idx + 1 >= len(frames):
+        h, w = frames[idx].shape[:2]
+        return np.zeros((h, w)), np.zeros((h, w))
+    
+    gray1 = cv2.cvtColor(frames[idx], cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(frames[idx + 1], cv2.COLOR_BGR2GRAY)
+    
+    flow = cv2.calcOpticalFlowFarneback(
+        gray1, gray2, None,
+        pyr_scale=0.5, levels=3, winsize=15,
+        iterations=3, poly_n=5, poly_sigma=1.2,
+        flags=0
+    )
+    
+    magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    
+    return magnitude, angle
+
+
+def extract_pixel_features(frames: list, idx: int, bg_median: np.ndarray = None) -> np.ndarray:
     """
     Extract feature vector for every pixel at frame idx.
     
     Features:
-        - diff_1: |I_t - I_{t+1}|
-        - diff_2: |I_t - I_{t+2}|
-        - local_mean: smoothed diff
+        - bg_diff: |I_t - background_median|
+        - flow_mag: optical flow magnitude
+        - local_mean: smoothed bg_diff
     """
     H, W = frames[idx].shape[:2]
     features = np.zeros((H, W, 3), dtype=np.float32)
     
-    if idx + 1 < len(frames):
-        features[:, :, 0] = compute_frame_difference(frames[idx], frames[idx + 1])
+    if bg_median is not None:
+        features[:, :, 0] = compute_frame_difference(frames[idx], bg_median)
     
-    if idx + 2 < len(frames):
-        features[:, :, 1] = compute_frame_difference(frames[idx], frames[idx + 2])
+    flow_mag, _ = compute_optical_flow(frames, idx)
+    features[:, :, 1] = flow_mag * 10
     
     if features[:, :, 0].size > 0:
-        features[:, :, 2] = compute_local_mean_difference(features[:, :, 0])
+        features[:, :, 2] = compute_local_mean_difference(features[:, :, 0].astype(np.uint8))
     
     return features
 
@@ -68,8 +103,8 @@ def features_to_training_data(features: np.ndarray, mask: np.ndarray,
     # Adaptive threshold: mean + 1.5 * std
     if threshold is None:
         diff_values = X_flat[:, 0]
-        threshold = np.mean(diff_values) + 1.5 * np.std(diff_values)
-        threshold = int(np.clip(threshold, 15, 50))  # Keep reasonable range
+        threshold = np.mean(diff_values) + 2.5 * np.std(diff_values)
+        threshold = int(np.clip(threshold, 20, 60))  # Keep reasonable range
     
     meaningful = X_flat[:, 0] > threshold
     clear_label = y_flat == 1

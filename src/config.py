@@ -20,16 +20,16 @@ MAX_FRAMES_PER_VIDEO = 40
 FRAME_SKIP = 4
 TARGET_FPS = 5
 
-SAMPLE_RATIO = 0.15
+SAMPLE_RATIO = 0.1
 
 ADAPTIVE_THRESHOLD = True
 BASE_THRESHOLD = None
 
 POSTPROCESS_ENABLED = True
-KERNEL_SIZE = 5
-MIN_AREA = 100
+KERNEL_SIZE = 9  # Morphological kernel size
+MIN_AREA = 300   # Min connected region size
 
-CLASSIFICATION_THRESHOLD = 0.5
+CLASSIFICATION_THRESHOLD = 0.5  # Not used - using optical flow instead
 
 MODEL_TYPE = "logistic_regression"
 KNN_K = 5
